@@ -28,17 +28,22 @@ homicide_df =
 ```
 
 **Baltimore, MD**
-need to solve for ci
+
 ```{r}
 homicide_fit =
 homicide_df %>% 
   filter(city_state == "Baltimore, MD") %>% 
-  glm(resolved ~ victim_age + victim_sex + victim_race, data = .)
+  glm(resolved ~ victim_sex + victim_age + victim_race, data = .)
 
 homicide_fit %>%  
-  broom::tidy() %>%  
-  mutate(OR = exp(estimate)) %>% 
-  select(term, log_OR = estimate, OR, p.value) %>%  
+  broom::tidy() %>% 
+  filter(term == "victim_sexMale") %>% 
+  mutate(
+    OR = exp(estimate),
+    conf.low = exp(estimate - 1.96 * std.error),
+    conf.high = exp(estimate + 1.96 * std.error)
+    ) %>% 
+  select(term, log_OR = estimate, OR, conf.low, conf.high) %>%  
   knitr::kable(digits = 3)
   
 ```
@@ -46,35 +51,31 @@ homicide_fit %>%
 **All Cities**
 
 ```{r}
-city_test = function(x, n) {
-  
-  prop.test(x = x, n = n)
-
-}
-
-```
-
-```{r}
-homicide_df_results = 
+city_glm = 
   homicide_df %>% 
+  nest(data = -city_state) %>% 
   mutate(
-    data = map2(unsol_homicides, total_homicides, city_test),
-    results = map(data, broom::tidy)
-  ) %>% 
-  select(city_state, results) %>% 
-  unnest(results) %>% 
-  select(city_state, estimate, conf.low, conf.high)
+    log_fit = map(data, \(df) glm(resolved ~ victim_sex + victim_age + victim_race, data = df)),
+    results = map(log_fit, broom::tidy)) %>% 
+  select(-data, -log_fit) %>%  
+  unnest(results)
 
-homicide_df_results
+city_glm_results =
+city_glm %>% 
+  filter(term == "victim_sexMale") %>% 
+  mutate(
+   OR = exp(estimate),
+   conf.low = exp(estimate - 1.96 * std.error),
+   conf.high = exp(estimate + 1.96 * std.error)
+    ) %>% 
+  select(city_state, term, OR, conf.low, conf.high)
 ```
 
 plotting results
 
 ```{r}
-homicide_df_results %>%
-  mutate(
-    city_state = fct_reorder(city_state, OR)
-  ) %>% 
+city_glm_results %>%
+ arrange(OR) %>% 
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "steelblue") +
