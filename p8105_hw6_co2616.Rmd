@@ -7,6 +7,7 @@ date: "2025-12-01"
 loading key packages
 ```{r}
 library(tidyverse)
+library(p8105.datasets)
 ```
 
 ## Problem 1
@@ -72,13 +73,84 @@ city_glm %>%
 ```
 
 plotting results
-
+note: need to fix ordering and add comments
 ```{r}
 city_glm_results %>%
- arrange(OR) %>% 
+  arrange(OR) %>% 
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "steelblue") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1))
   
+```
+
+## Problem 2
+
+```{r}
+data("weather_df")
+```
+
+```{r}
+boot_sample = function(df) {
+  
+  sample_frac(df, size = 1, replace = TRUE)
+}
+```
+
+```{r}
+boot_straps = 
+  tibble(
+    iter = 1:100
+  ) %>% 
+  mutate(
+    bootstrap_sample = map(iter, \(i) boot_sample(df = weather_df))
+  )
+```
+
+```{r}
+bootstrap_results = 
+  boot_straps %>% 
+  mutate(
+    models = map(bootstrap_sample, \(df) lm(tmax ~ tmin + prcp, data = df)),
+    glance_results = map(models, broom::glance),
+    tidy_results = map(models, broom::tidy)
+    ) %>%  
+  select(-bootstrap_sample, -models) %>%  
+  unnest(glance_results) %>% 
+  select(iter, r.squared, tidy_results) %>% 
+  unnest(tidy_results) %>% 
+  select(iter, r.squared, term, estimate) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  mutate(
+    beta_ratio = tmin/prcp
+  )
+```
+
+```{r}
+bootstrap_results %>% 
+  ggplot(aes(x = beta_ratio)) +
+  geom_density()
+```
+note: add comments
+
+```{r}
+bootstrap_results %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density()
+```
+note: add comments
+
+```{r}
+bootstrap_results %>% 
+  select(iter, r.squared, beta_ratio) %>% 
+ summarise(
+   r_cis_lower = quantile(r.squared, 0.025),
+   r_cis_upper = quantile(r.squared, 0.975),
+   beta_cis_lower = quantile(beta_ratio, 0.025),
+   beta_cis_upper = quantile(beta_ratio, 0.975),
+ ) %>% 
+  knitr::kable(digits = 3)
 ```
