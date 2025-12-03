@@ -27,6 +27,7 @@ homicide_df =
     victim_race %in% c("White", "Black") 
         )
 ```
+note: case when function
 
 **Baltimore, MD**
 
@@ -34,7 +35,7 @@ homicide_df =
 homicide_fit =
 homicide_df %>% 
   filter(city_state == "Baltimore, MD") %>% 
-  glm(resolved ~ victim_sex + victim_age + victim_race, data = .)
+  glm(resolved ~ victim_sex + victim_age + victim_race, family = binomial(),data = .)
 
 homicide_fit %>%  
   broom::tidy() %>% 
@@ -73,10 +74,12 @@ city_glm %>%
 ```
 
 plotting results
-note: need to fix ordering and add comments
+note: add comments
 ```{r}
 city_glm_results %>%
-  arrange(OR) %>% 
+  mutate(
+   city_state = fct_reorder(city_state, OR)
+  ) %>% 
   ggplot(aes(x = city_state, y = OR)) +
   geom_point() +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2, color = "steelblue") +
@@ -100,7 +103,7 @@ boot_sample = function(df) {
 ```{r}
 boot_straps = 
   tibble(
-    iter = 1:100
+    iter = 1:5000
   ) %>% 
   mutate(
     bootstrap_sample = map(iter, \(i) boot_sample(df = weather_df))
@@ -154,3 +157,73 @@ bootstrap_results %>%
  ) %>% 
   knitr::kable(digits = 3)
 ```
+
+
+## Problem 3
+
+loading and cleaning birthweight dataset
+
+```{r}
+birth_df = 
+  read_csv("data/birthweight.csv", na = c("NA", ".", "")) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    babysex = case_match(
+      babysex,
+      1 ~ "male", 
+      2 ~ "female"),
+    malform = case_match(
+      malform,
+      0 ~ "absent", 
+      1 ~ "present"),
+    frace = case_match(
+      frace,
+      1 ~ "White",
+      2 ~ "Black",
+      3 ~ "Asian",
+      4 ~ "Puerto Rican",
+      8 ~ "Other",
+      9 ~ "Unknown"
+    ),
+    mrace = case_match(
+      mrace,
+      1 ~ "White",
+      2 ~ "Black",
+      3 ~ "Asian",
+      4 ~ "Puerto Rican",
+    ),
+  )
+```
+
+This model is a multiple linear regression with `bwt` as the response with `fincome`, `mrace`, `smoken` and `momage` as the predictors. My hypothesized model is based off a 2015 scientific paper published in the Archives of Medicen and Health Sciences exploring maternal determinants influencing birth weight of newborn. The predictors I included in my model are similar to the variables the authors of the paper studied.
+
+```{r}
+model_1 = 
+ lm(bwt ~ fincome + mrace + smoken + momage + delwt, data = birth_df)
+```
+
+plot of model residuals against fitted values
+```{r}
+birth_df %>% 
+modelr::add_residuals(model_1) %>%
+modelr::add_predictions(model_1) %>% 
+ggplot(aes(x = pred, y = resid)) +
+geom_point()
+```
+`
+model with`bwt` as the response with `blength` and `gaweeks` as predictors (main effects only)
+
+```{r}
+model_1 = 
+ lm(bwt ~ blength + gaweeks, data = birth_df)
+```
+
+model with`bwt` as the response with `bhead`, `blength`, `babysex` as predictors and interactions
+
+```{r}
+model_3 = 
+ lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birth_df)
+```
+
+
+
