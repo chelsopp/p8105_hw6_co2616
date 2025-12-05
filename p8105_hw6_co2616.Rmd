@@ -8,6 +8,8 @@ loading key packages
 ```{r}
 library(tidyverse)
 library(p8105.datasets)
+library(modelr)
+library(mgcv)
 ```
 
 ## Problem 1
@@ -27,7 +29,6 @@ homicide_df =
     victim_race %in% c("White", "Black") 
         )
 ```
-note: case when function
 
 **Baltimore, MD**
 
@@ -35,7 +36,7 @@ note: case when function
 homicide_fit =
 homicide_df %>% 
   filter(city_state == "Baltimore, MD") %>% 
-  glm(resolved ~ victim_sex + victim_age + victim_race, family = binomial(),data = .)
+  glm(resolved ~ victim_sex + victim_age + victim_race, family = binomial(), data = .)
 
 homicide_fit %>%  
   broom::tidy() %>% 
@@ -53,30 +54,31 @@ homicide_fit %>%
 **All Cities**
 
 ```{r}
-city_glm = 
+city_fit = 
   homicide_df %>% 
   nest(data = -city_state) %>% 
   mutate(
-    log_fit = map(data, \(df) glm(resolved ~ victim_sex + victim_age + victim_race, data = df)),
-    results = map(log_fit, broom::tidy)) %>% 
+    log_fit = map(data, \(df) glm(resolved ~ victim_sex + victim_age + victim_race, family = binomial(), data = df)),
+    results = map(log_fit, broom::tidy)
+    ) %>% 
   select(-data, -log_fit) %>%  
   unnest(results)
 
-city_glm_results =
-city_glm %>% 
+city_fit_results =
+city_fit %>% 
   filter(term == "victim_sexMale") %>% 
   mutate(
    OR = exp(estimate),
    conf.low = exp(estimate - 1.96 * std.error),
    conf.high = exp(estimate + 1.96 * std.error)
     ) %>% 
-  select(city_state, term, OR, conf.low, conf.high)
+  select(city_state, term, log_OR = estimate, OR, conf.low, conf.high)
 ```
 
 plotting results
-note: add comments
+
 ```{r}
-city_glm_results %>%
+city_fit_results %>%
   mutate(
    city_state = fct_reorder(city_state, OR)
   ) %>% 
@@ -86,6 +88,7 @@ city_glm_results %>%
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 1))
   
 ```
+Frenso, CA, Stockton, CA, and Albuquerque, NM show a positive association between sex and odds of homicides resolved. The rest of the cities show no effect or a negative association between sex and odds of homicides resolved. Albuquerque, NM has the highest odds of resolved homicides among males compared to females, adjusting for race and age. New York, NY has the lowest odds of resolved homicides among males compared to females, adjusting for race and age.
 
 ## Problem 2
 
@@ -203,6 +206,7 @@ model_1 =
 ```
 
 plot of model residuals against fitted values
+
 ```{r}
 birth_df %>% 
 modelr::add_residuals(model_1) %>%
@@ -214,7 +218,7 @@ geom_point()
 model with`bwt` as the response with `blength` and `gaweeks` as predictors (main effects only)
 
 ```{r}
-model_1 = 
+model_2 = 
  lm(bwt ~ blength + gaweeks, data = birth_df)
 ```
 
@@ -225,5 +229,42 @@ model_3 =
  lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = birth_df)
 ```
 
+**cross validation!**
 
+```{r}
+cv_df =
+  crossv_mc(birth_df, 100) %>% 
+   mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+```
+
+```{r}
+cv_df = 
+  cv_df %>% 
+  mutate(
+    model_1  = map(train, \(df) lm(bwt ~ fincome + mrace + smoken + momage + delwt, data = df)),
+    model_2  = map(train, \(df) lm(bwt ~ blength + gaweeks, data = df)),
+    model_3  = map(train, \(df) lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = df))
+    ) %>% 
+  mutate(
+    rmse_model1 = map2_dbl(model_1, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_model2 = map2_dbl(model_2, test, \(mod, df) rmse(model = mod, data = df)),
+    rmse_model3 = map2_dbl(model_3, test, \(mod, df) rmse(model = mod, data = df))
+    )
+```
+
+plotting the prediction error distribution for each model.
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>%
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
 
